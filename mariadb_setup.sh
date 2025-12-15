@@ -3,9 +3,10 @@
 set -e
 
 # ===== CONFIG =====
-DB_NAME="k3s"
-DB_USER="cybermeister"
-DB_PASS="cyber123"
+DB_NAME="mijn_database"
+DB_USER="mijn_user"
+DB_PASS="sterk_wachtwoord"
+DB_PORT="33306"
 # ==================
 
 echo "==> Update system"
@@ -14,17 +15,21 @@ sudo apt update
 echo "==> Install MariaDB client + server"
 sudo apt install -y mariadb-server mariadb-client
 
-echo "==> Enable & start service"
-if systemctl list-unit-files | grep -q mariadb.service; then
-    sudo systemctl enable mariadb
-    sudo systemctl start mariadb
-elif systemctl list-unit-files | grep -q mysql.service; then
-    sudo systemctl enable mysql
-    sudo systemctl start mysql
+echo "==> Configure MariaDB port"
+CONF_FILE="/etc/mysql/mariadb.conf.d/50-server.cnf"
+
+if grep -q "^port" "$CONF_FILE"; then
+    sudo sed -i "s/^port.*/port = ${DB_PORT}/" "$CONF_FILE"
 else
-    echo "ERROR: MariaDB/MySQL service not found"
-    exit 1
+    echo "port = ${DB_PORT}" | sudo tee -a "$CONF_FILE"
 fi
+
+echo "==> Enable & start MariaDB service"
+sudo systemctl enable mariadb
+sudo systemctl restart mariadb
+
+echo "==> Wait for MariaDB to come up"
+sleep 3
 
 echo "==> Create database and user"
 sudo mariadb <<EOF
@@ -39,7 +44,9 @@ GRANT ALL PRIVILEGES ON \`${DB_NAME}\`.* TO '${DB_USER}'@'localhost';
 FLUSH PRIVILEGES;
 EOF
 
-echo "==> Test login with new user"
-mariadb -u${DB_USER} -p${DB_PASS} ${DB_NAME} -e "SHOW TABLES;"
+echo "==> Test connection on custom port"
+mariadb -h 127.0.0.1 -P ${DB_PORT} -u${DB_USER} -p${DB_PASS} ${DB_NAME} -e "SELECT 1;"
 
 echo "==> DONE"
+echo "Connection string:"
+echo "mysql://${DB_USER}:${DB_PASS}@localhost:${DB_PORT}/${DB_NAME}"
